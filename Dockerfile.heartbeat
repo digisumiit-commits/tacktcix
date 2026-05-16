@@ -1,0 +1,39 @@
+# PRO-40: Heartbeat Engine Image
+# TypeScript service that drives the Paperclip agent heartbeat lifecycle.
+# Connects to PostgreSQL and Redis. Exposes health check on HEARTBEAT_PORT.
+
+FROM node:22-bookworm-slim AS builder
+
+WORKDIR /build
+
+COPY src/heartbeat/package.json src/heartbeat/package-lock.json* ./
+
+RUN npm ci --ignore-scripts && npm cache clean --force
+
+COPY src/heartbeat/tsconfig.json ./
+COPY src/heartbeat/src/ ./src/
+
+RUN npm run build
+
+# ── Production stage ─────────────────────────────────────────────────
+
+FROM node:22-bookworm-slim
+
+RUN groupadd -r heartbeat -g 1001 && \
+    useradd -r -g heartbeat -u 1001 -m heartbeat
+
+WORKDIR /app
+
+COPY --from=builder /build/package.json /build/package-lock.json* ./
+RUN npm ci --omit=dev --ignore-scripts && npm cache clean --force
+
+COPY --from=builder /build/dist/ ./dist/
+
+USER heartbeat
+
+EXPOSE 3001
+
+HEALTHCHECK --interval=15s --timeout=5s --retries=3 --start-period=10s \
+  CMD ["node", "-e", "fetch('http://localhost:3001/health').then(r => r.ok ? process.exit(0) : process.exit(1))"]
+
+CMD ["node", "dist/index.js"]

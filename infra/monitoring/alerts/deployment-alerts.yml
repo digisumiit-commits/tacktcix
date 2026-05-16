@@ -1,0 +1,156 @@
+# Deployment & infrastructure alerting rules
+groups:
+  - name: deployment
+    rules:
+      - alert: DeploymentFailed
+        expr: increase(tacktcix_deploy_failures_total[5m]) > 0
+        for: 1m
+        labels:
+          severity: critical
+          team: devops
+        annotations:
+          summary: "Deployment failed for {{ $labels.service }} in {{ $labels.environment }}"
+          description: "Deployment failure count increased in the last 5 minutes. Run: {{ $labels.run_id }}"
+          runbook_url: "https://github.com/promptit/tacktcix/blob/main/docs/runbooks/deploy-failure.md"
+
+      - alert: RollbackTriggered
+        expr: increase(tacktcix_rollback_total[5m]) > 0
+        for: 1m
+        labels:
+          severity: critical
+          team: devops
+        annotations:
+          summary: "Automatic rollback triggered for {{ $labels.service }} in {{ $labels.environment }}"
+          description: "Rollback initiated. Previous deployment: {{ $labels.previous_version }}"
+          runbook_url: "https://github.com/promptit/tacktcix/blob/main/docs/runbooks/rollback.md"
+
+      - alert: DeploymentStuck
+        expr: tacktcix_deploy_in_progress > 0 and time() - tacktcix_deploy_start_timestamp > 1800
+        for: 5m
+        labels:
+          severity: warning
+          team: devops
+        annotations:
+          summary: "Deployment in {{ $labels.environment }} has been running for >30 minutes"
+          description: "The deployment may be stuck. Check CI/CD pipeline."
+          runbook_url: "https://github.com/promptit/tacktcix/blob/main/docs/runbooks/deploy-stuck.md"
+
+  - name: health
+    rules:
+      - alert: ServiceDown
+        expr: up == 0
+        for: 2m
+        labels:
+          severity: critical
+          team: devops
+        annotations:
+          summary: "{{ $labels.service }} is down in {{ $labels.environment }}"
+          description: "Service {{ $labels.service }} on {{ $labels.instance }} has been unreachable for 2 minutes"
+          runbook_url: "https://github.com/promptit/tacktcix/blob/main/docs/runbooks/service-down.md"
+
+      - alert: HighErrorRate
+        expr: rate(http_requests_total{status=~"5.."}[5m]) / rate(http_requests_total[5m]) > 0.05
+        for: 5m
+        labels:
+          severity: warning
+          team: backend
+        annotations:
+          summary: "High 5xx error rate on {{ $labels.service }}"
+          description: "{{ $value | humanizePercentage }} error rate over 5 minutes for {{ $labels.service }}"
+
+      - alert: HighLatency
+        expr: histogram_quantile(0.95, rate(http_request_duration_seconds_bucket[5m])) > 1
+        for: 10m
+        labels:
+          severity: warning
+          team: backend
+        annotations:
+          summary: "P95 latency > 1s on {{ $labels.service }}"
+          description: "P95 latency is {{ $value }}s for {{ $labels.service }} in {{ $labels.environment }}"
+
+  - name: capacity
+    rules:
+      - alert: ContainerMemoryHigh
+        expr: container_memory_usage_bytes / container_spec_memory_limit_bytes > 0.85
+        for: 5m
+        labels:
+          severity: warning
+          team: devops
+        annotations:
+          summary: "{{ $labels.container_name }} memory usage > 85%"
+          description: "Container {{ $labels.container_name }} is approaching its memory limit"
+
+      - alert: HighCPUUsage
+        expr: rate(container_cpu_usage_seconds_total[5m]) * 100 / container_spec_cpu_quota > 85
+        for: 10m
+        labels:
+          severity: warning
+          team: devops
+        annotations:
+          summary: "{{ $labels.container_name }} CPU usage > 85%"
+          description: "Container {{ $labels.container_name }} CPU throttling likely"
+
+  - name: heartbeat
+    rules:
+      - alert: HeartbeatAgentUnhealthy
+        expr: paperclip_agent_heartbeat_status == 0
+        for: 2m
+        labels:
+          severity: critical
+          team: devops
+        annotations:
+          summary: "Agent {{ $labels.agent_id }} heartbeat is unhealthy"
+          description: "Agent {{ $labels.agent_id }} has been reporting unhealthy for 2 minutes. Check agent logs."
+          runbook_url: "https://github.com/promptit/tacktcix/blob/main/docs/runbooks/heartbeat-agent-down.md"
+
+      - alert: HeartbeatAgentDegraded
+        expr: paperclip_agent_heartbeat_status == 2
+        for: 5m
+        labels:
+          severity: warning
+          team: devops
+        annotations:
+          summary: "Agent {{ $labels.agent_id }} heartbeat is degraded"
+          description: "Agent {{ $labels.agent_id }} has been reporting degraded for 5 minutes."
+
+      - alert: HeartbeatFailureRateHigh
+        expr: rate(paperclip_heartbeat_failures_total[10m]) / clamp_min(rate(paperclip_heartbeat_scanned_total[10m]), 0.001) > 0.1
+        for: 5m
+        labels:
+          severity: warning
+          team: devops
+        annotations:
+          summary: "Heartbeat failure rate > 10%"
+          description: "Failure rate is {{ $value | humanizePercentage }} over the last 10 minutes. Check agent logs and infrastructure health."
+
+      - alert: HeartbeatDBConnectionLost
+        expr: paperclip_metrics_db_healthy == 0
+        for: 1m
+        labels:
+          severity: critical
+          team: devops
+        annotations:
+          summary: "Heartbeat metrics database unreachable"
+          description: "PostgreSQL connection lost. Metrics will not be persisted until it recovers."
+          runbook_url: "https://github.com/promptit/tacktcix/blob/main/docs/runbooks/metrics-db-down.md"
+
+      - alert: HeartbeatDBFlushErrorsIncreasing
+        expr: increase(paperclip_heartbeat_db_flush_errors_total[5m]) > 5
+        for: 5m
+        labels:
+          severity: warning
+          team: devops
+        annotations:
+          summary: "Heartbeat DB flush errors increasing"
+          description: "{{ $value }} flush errors in the last 5 minutes. Check database connectivity and disk space."
+
+      - alert: NoHeartbeatCycles
+        expr: rate(paperclip_heartbeat_cycles_total[15m]) == 0
+        for: 5m
+        labels:
+          severity: critical
+          team: devops
+        annotations:
+          summary: "No heartbeat cycles detected in 15 minutes"
+          description: "Heartbeat engine may be down or stuck. No cycles completed in 15 minutes."
+          runbook_url: "https://github.com/promptit/tacktcix/blob/main/docs/runbooks/heartbeat-engine-down.md"

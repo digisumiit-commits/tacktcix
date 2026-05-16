@@ -1,0 +1,26 @@
+# PRO-15: Worker Manager Image
+# Runs the Python worker runtime that consumes jobs from Redis and spawns sandbox containers.
+
+FROM python:3.11-slim-bookworm
+
+RUN groupadd -r worker -g 1000 && \
+    useradd -r -g worker -u 1000 -m worker
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    curl \
+    ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+COPY src/ ./src/
+COPY config/ ./config/
+
+USER worker
+
+EXPOSE 8080
+
+CMD ["python", "-m", "src.main"]

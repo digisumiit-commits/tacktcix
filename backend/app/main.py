@@ -1,14 +1,21 @@
+from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api.health import router as health_router
-from app.middleware.tenant import TenantMiddleware
+from app.api.onboarding import router as onboarding_router
+from app.api.companies import router as companies_router
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    yield
+
 
 app = FastAPI(
-    title="TACKTCIX API",
+    title="TACKTCIX — Company Creation Engine",
+    description="Strategic onboarding interview, vision-to-knowledge-graph conversion, and company generation pipeline.",
     version="0.1.0",
-    docs_url="/docs",
-    redoc_url="/redoc",
+    lifespan=lifespan,
 )
 
 app.add_middleware(
@@ -18,14 +25,11 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-app.add_middleware(TenantMiddleware)
 
-app.include_router(health_router, prefix="/api")
+app.include_router(onboarding_router)
+app.include_router(companies_router)
 
 
-@app.get("/api/me")
-async def get_tenant_info():
-    from app.core.tenant import get_tenant
-
-    tenant_id = get_tenant()
-    return {"tenant_id": str(tenant_id) if tenant_id else None}
+@app.get("/api/health")
+async def health():
+    return {"status": "ok", "service": "tacktcix-onboarding-engine"}

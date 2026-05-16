@@ -1,0 +1,72 @@
+# Execution Worker Runtime Configuration
+# PRO-15: Isolated execution worker system
+
+worker:
+  # Unique worker instance ID (set via env WORKER_ID or auto-generated)
+  id: ${WORKER_ID:-worker-${HOSTNAME}}
+  # Consumer group name for Redis Streams
+  group: execution-workers
+  # Max concurrent jobs this worker can handle
+  max_concurrent_jobs: 4
+  # Graceful shutdown timeout in seconds
+  shutdown_timeout: 30
+
+redis:
+  host: ${REDIS_HOST:-localhost}
+  port: ${REDIS_PORT:-6379}
+  db: ${REDIS_DB:-0}
+  password: ${REDIS_PASSWORD:-}
+  # Redis Streams configuration
+  stream: jobs:execution
+  # Pending job claim timeout (ms) — how long before another consumer can claim an unacked job
+  claim_timeout_ms: 300000
+  # Block timeout for XREADGROUP (ms)
+  block_ms: 5000
+
+docker:
+  # Base URL for Docker daemon (unix socket or tcp)
+  host: ${DOCKER_HOST:-unix:///var/run/docker.sock}
+  # Default image for execution containers
+  default_image: ${WORKER_EXEC_IMAGE:-execution-sandbox:latest}
+  # Docker network for worker containers
+  network: execution-sandbox-net
+  # Pull policy: always, missing, never
+  pull_policy: missing
+
+sandbox:
+  # Default resource profile
+  default_profile: medium
+  # Default job timeout in seconds
+  default_timeout_s: 600
+  # Max job timeout in seconds (hard cap)
+  max_timeout_s: 3600
+  # Mount workspace into containers at this path
+  workspace_mount: /workspace
+  # Read-only root filesystem
+  read_only_rootfs: true
+  # Allow outbound network access (opt-in per job)
+  default_network_access: false
+  # Tmpfs size for /tmp in containers
+  tmpfs_size_mb: 256
+  # Drop all Linux capabilities, add only what's needed
+  drop_all_capabilities: true
+
+health:
+  # HTTP health check port
+  port: ${HEALTH_PORT:-8080}
+  # Health check endpoint
+  path: /health
+  # Interval between health checks on worker containers (seconds)
+  check_interval_s: 10
+  # Max failures before container restart
+  max_failures: 3
+  # Auto-restart unhealthy workers
+  auto_restart: true
+
+monitoring:
+  # Log level: debug, info, warning, error
+  log_level: ${LOG_LEVEL:-info}
+  # Emit structured logs as JSON
+  json_logs: true
+  # Metrics collection interval (seconds)
+  metrics_interval_s: 30

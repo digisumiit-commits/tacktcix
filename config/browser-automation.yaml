@@ -1,0 +1,79 @@
+# Browser Automation Configuration
+# PRO-24: Managed isolated browser sessions with Playwright + Browserless + Stagehand
+
+browser:
+  # Remote Browserless WebSocket endpoint (set to use remote instead of local browser)
+  # Example: ws://browserless:3000/chromium?token=xxx
+  browserWSEndpoint: ${BROWSER_WS_ENDPOINT:-}
+  # Run headless (true for server environments)
+  headless: ${BROWSER_HEADLESS:-true}
+  # Launch arguments for Chromium
+  launchArgs:
+    - "--disable-dev-shm-usage"
+    - "--no-sandbox"
+    - "--disable-setuid-sandbox"
+    - "--disable-gpu"
+    - "--disable-software-rasterizer"
+
+session:
+  # Isolation model: "context" (lightweight) or "browser" (full process separation)
+  isolation: context
+  # Max concurrent browser sessions per worker
+  maxSessions: ${BROWSER_MAX_SESSIONS:-4}
+  # Idle timeout before auto-closing a session (ms)
+  sessionIdleTimeoutMs: 300000
+
+stagehand:
+  # Enable AI-driven Stagehand integration (requires BROWSERBASE_API_KEY env var)
+  enabled: ${STAGEHAND_ENABLED:-false}
+  # AI model provider for Stagehand
+  modelProvider: ${STAGEHAND_MODEL_PROVIDER:-anthropic}
+  # Model name
+  modelName: ${STAGEHAND_MODEL_NAME:-claude-sonnet-4-6}
+  # Verbosity level: 0 (silent) to 2 (verbose)
+  verbose: ${STAGEHAND_VERBOSE:-0}
+
+auth:
+  # Directory for encrypted auth state files
+  storageDir: ${BROWSER_AUTH_DIR:-.browser-auth}
+  # Master key for encryption (at least 32 chars, set via env var)
+  # BROWSER_AUTH_MASTER_KEY
+
+screenshot:
+  # Output directory
+  outputDir: ${BROWSER_SCREENSHOT_DIR:-.screenshots}
+  # Default format: png, jpeg, webp
+  defaultFormat: ${BROWSER_SCREENSHOT_FORMAT:-png}
+  # JPEG quality (1-100)
+  defaultQuality: 80
+  # Capture full scrollable page by default
+  fullPage: true
+  # Include ISO timestamps in filenames
+  includeTimestamps: true
+  # Max stored screenshots
+  maxScreenshots: 1000
+
+selectors:
+  # Selector resolution strategies in priority order
+  strategies:
+    - name: css
+      type: css
+      timeout: 10000
+    - name: text
+      type: text
+      timeout: 5000
+    - name: xpath
+      type: xpath
+      timeout: 5000
+    - name: aria
+      type: aria
+      timeout: 5000
+    - name: stagehand-ai
+      type: ai
+      timeout: 30000
+  # Max retries per strategy
+  maxRetries: 3
+  # Delay between retries (ms)
+  retryDelayMs: 1000
+  # Stop after first strategy failure if true
+  failFast: false

@@ -1,0 +1,307 @@
+# Security Layer Configuration
+# PRO-29: Encrypted secrets, isolated runtimes, scoped permissions,
+# sandbox execution, rate limiting, audit logging
+
+secrets:
+  # Encryption algorithm
+  algorithm: AES-256-GCM
+  # Key source: vault, aws-kms, gcp-kms, azure-kv, or local (dev only)
+  key_source: ${SECRETS_KEY_SOURCE:-vault}
+  # Vault configuration (when key_source=vault)
+  vault:
+    url: ${VAULT_URL:-https://vault.internal:8200}
+    transit_path: /v1/transit
+    key_name: paperclip-secrets
+    role: ${VAULT_ROLE:-paperclip-worker}
+  # KMS key ARN (when key_source=aws-kms)
+  aws_kms:
+    key_arn: ${AWS_KMS_KEY_ARN}
+    region: ${AWS_REGION}
+  # Local key file path (dev only, never in production)
+  local_key_file: ${SECRETS_LOCAL_KEY_FILE:-}
+  # Default rotation interval in days
+  rotation_days: 30
+  # Secrets injection method: tmpfs-file, env-var (tmpfs-file required for prod)
+  injection_method: tmpfs-file
+  # Mount path for secrets tmpfs
+  mount_path: /secrets
+  # Never log these key names
+  redacted_keys:
+    - api_key
+    - password
+    - secret
+    - token
+    - private_key
+    - credential
+
+permissions:
+  # Agent capability model: explicit allowlist
+  # Each agent type maps to a capability set
+  agent_capabilities:
+    coder:
+      - fs.read_workspace
+      - fs.write_workspace
+      - fs.read_tmp
+      - fs.write_tmp
+      - process.exec_safe_commands
+      - net.outbound_github
+      - net.outbound_pypi
+      - net.outbound_npm
+      - git.read
+      - git.write
+    devops:
+      - fs.read_workspace
+      - fs.write_workspace
+      - fs.read_tmp
+      - fs.write_tmp
+      - process.exec_safe_commands
+      - net.outbound_docker_registry
+      - net.outbound_github
+      - net.outbound_pypi
+      - net.outbound_cloud_apis
+      - docker.manage
+      - git.read
+      - git.write
+    qa:
+      - fs.read_workspace
+      - fs.read_tmp
+      - process.exec_safe_commands
+      - net.outbound_test_endpoints
+      - git.read
+    securityengineer:
+      - fs.read_workspace
+      - fs.write_workspace
+      - fs.read_tmp
+      - fs.write_tmp
+      - process.exec_safe_commands
+      - net.outbound_scan_targets
+      - net.outbound_github
+      - git.read
+      - security.scan
+    explore:
+      - fs.read_workspace
+      - fs.read_tmp
+      - process.exec_safe_commands
+      - net.outbound_github
+      - git.read
+
+  # Default capability set when agent type is unknown
+  default_capabilities:
+    - fs.read_workspace
+    - fs.read_tmp
+    - git.read
+
+  # Command allowlist patterns (regex)
+  safe_commands:
+    - ^git$
+    - ^git\s
+    - ^npm$
+    - ^npm\s
+    - ^npx$
+    - ^npx\s
+    - ^node$
+    - ^node\s
+    - ^python[3]?$
+    - ^python[3]?\s
+    - ^pip[3]?$
+    - ^pip[3]?\s
+    - ^poetry$
+    - ^poetry\s
+    - ^cargo$
+    - ^cargo\s
+    - ^go$
+    - ^go\s
+    - ^docker$
+    - ^docker\s
+    - ^kubectl$
+    - ^kubectl\s
+    - ^curl$
+    - ^curl\s
+    - ^wget$
+    - ^wget\s
+    - ^gh$
+    - ^gh\s
+    - ^make$
+    - ^make\s
+
+  # Explicitly blocked commands (checked before allowlist)
+  blocked_commands:
+    - ^/bin/sh$
+    - ^/bin/bash$
+    - ^/bin/zsh$
+    - ^/bin/dash$
+    - ^sh$
+    - ^bash$
+    - ^zsh$
+    - ^dash$
+    - ^nc$
+    - ^nc\s
+    - ^ncat$
+    - ^ncat\s
+    - ^socat$
+    - ^socat\s
+    - ^ssh$
+    - ^ssh\s
+    - ^scp$
+    - ^scp\s
+    - ^chmod\s.*\+s
+    - ^mount$
+    - ^mount\s
+    - ^umount$
+    - ^umount\s
+
+sandbox:
+  # Seccomp profile: default, restrictive, permissive (dev only)
+  seccomp_profile: ${SECCOMP_PROFILE:-default}
+  # Path to seccomp JSON profiles
+  seccomp_profile_dir: /etc/paperclip/seccomp
+  # AppArmor profile prefix — per-agent-type profiles are named {prefix}-{agent_type}
+  # e.g., paperclip-execution-coder, paperclip-execution-devops, etc.
+  apparmor_profile: paperclip-execution
+  # Directory for AppArmor profile files on the host
+  apparmor_profile_dir: /etc/paperclip/apparmor
+  # Whether to enforce AppArmor profiles (requires kernel support)
+  apparmor_enabled: ${APPARMOR_ENABLED:-true}
+  # No new privileges
+  no_new_privileges: true
+  # Drop all Linux capabilities
+  drop_all_capabilities: true
+  # Capabilities to add back (minimal set)
+  retain_capabilities: []
+  # Read-only root filesystem
+  read_only_rootfs: true
+  # Mount /tmp as tmpfs
+  tmpfs_mounts:
+    - /tmp:size=256M,mode=1777
+    - /run:size=64M,mode=0755
+  # Deny all device access except null, zero, random, urandom
+  device_access:
+    - /dev/null:rw
+    - /dev/zero:rw
+    - /dev/random:r
+    - /dev/urandom:r
+  # Max process count
+  pids_limit: 100
+  # Prevent privilege escalation via setuid binaries
+  no_setuid: true
+
+network:
+  # Default policy: deny all outbound
+  default_policy: deny
+  # Allowed egress CIDRs per category
+  egress_rules:
+    github:
+      - 140.82.112.0/20
+      - 185.199.108.0/22
+    pypi:
+      - 151.101.0.0/16
+      - 151.101.64.0/16
+    npm:
+      - 104.16.0.0/12
+    docker_registry:
+      - docker.io
+      - ghcr.io
+    cloud_apis:
+      - aws:*.amazonaws.com
+    test_endpoints:
+      - 0.0.0.0/0  # Allow all for test endpoints (restricted by other layers)
+    scan_targets:
+      - 0.0.0.0/0  # Allow all for security scanning
+
+  # DNS: only these servers
+  dns_servers:
+    - 8.8.8.8
+    - 1.1.1.1
+  # Block DNS rebinding attacks
+  dns_search_domains: []
+
+rate_limiting:
+  # Token bucket configuration
+  # Global rate limits (per company)
+  global:
+    requests_per_second: 100
+    burst_size: 200
+  # Per-agent rate limits
+  per_agent:
+    requests_per_second: 20
+    burst_size: 40
+  # Per-execution rate limits
+  per_execution:
+    requests_per_second: 5
+    burst_size: 10
+  # Redis backend for distributed rate limiting
+  redis:
+    key_prefix: ratelimit
+    # Sliding window size in seconds
+    window_size_s: 60
+  # Rate limit response
+  response:
+    status_code: 429
+    retry_after_header: true
+    body: '{"error":"rate_limited","message":"Too many requests. Retry after {retry_after} seconds."}'
+
+audit:
+  # Audit log destination: file, stdout, redis-stream, cloudwatch, loki
+  destination: ${AUDIT_LOG_DESTINATION:-stdout}
+  # File path when destination=file
+  file_path: /var/log/paperclip/audit.log
+  # JSON structured logging
+  format: json
+  # Minimum severity to log: debug, info, warning, error, critical
+  min_severity: info
+  # Required fields in every audit event
+  required_fields:
+    - timestamp
+    - event_id
+    - trace_id
+    - actor_type
+    - actor_id
+    - action
+    - resource_type
+    - resource_id
+    - result
+    - source_ip
+  # Audit event categories
+  events:
+    execution_lifecycle:
+      - execution.created
+      - execution.started
+      - execution.completed
+      - execution.failed
+      - execution.timeout
+      - execution.cancelled
+    secrets:
+      - secret.accessed
+      - secret.rotated
+      - secret.created
+      - secret.deleted
+    permissions:
+      - permission.checked
+      - permission.denied
+      - permission.granted
+    sandbox:
+      - sandbox.escape_attempt
+      - sandbox.syscall_blocked
+      - sandbox.network_blocked
+      - sandbox.resource_limit_hit
+    rate_limit:
+      - ratelimit.hit
+      - ratelimit.exceeded
+    auth:
+      - auth.token_validated
+      - auth.token_expired
+      - auth.token_revoked
+  # Retention
+  retention:
+    hot_days: 90
+    cold_days: 365
+  # PII/Secret redaction patterns
+  redaction_patterns:
+    - pattern: '(sk-[a-zA-Z0-9]{20,})'
+      replace: '[REDACTED_API_KEY]'
+    - pattern: '(ghp_[a-zA-Z0-9]{36})'
+      replace: '[REDACTED_GITHUB_TOKEN]'
+    - pattern: '(Bearer\s+[a-zA-Z0-9._-]+)'
+      replace: 'Bearer [REDACTED]'
+    - pattern: '([a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,})'
+      replace: '[REDACTED_EMAIL]'

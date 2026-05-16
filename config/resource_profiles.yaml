@@ -1,0 +1,53 @@
+# Resource profiles for execution containers
+# Each profile defines CPU, memory, and disk limits
+
+profiles:
+  tiny:
+    cpu_shares: 256        # 0.25 CPU
+    cpu_quota: 25000       # 25ms per 100ms period
+    cpu_period: 100000
+    memory_mb: 128
+    memory_swap_mb: 256
+    disk_size_gb: 1
+    pids_limit: 50
+    description: "Single-shot commands, small scripts"
+
+  small:
+    cpu_shares: 512        # 0.5 CPU
+    cpu_quota: 50000       # 50ms per 100ms period
+    cpu_period: 100000
+    memory_mb: 512
+    memory_swap_mb: 1024
+    disk_size_gb: 5
+    pids_limit: 100
+    description: "Code generation, linting, small tests"
+
+  medium:
+    cpu_shares: 1024       # 1.0 CPU
+    cpu_quota: 100000      # 100ms per 100ms period
+    cpu_period: 100000
+    memory_mb: 2048
+    memory_swap_mb: 4096
+    disk_size_gb: 10
+    pids_limit: 200
+    description: "Builds, test suites, repo management"
+
+  large:
+    cpu_shares: 2048       # 2.0 CPU
+    cpu_quota: 200000      # 200ms per 100ms period
+    cpu_period: 100000
+    memory_mb: 4096
+    memory_swap_mb: 8192
+    disk_size_gb: 20
+    pids_limit: 500
+    description: "Heavy builds, browser automation, analytics"
+
+  xlarge:
+    cpu_shares: 4096       # 4.0 CPU
+    cpu_quota: 400000      # 400ms per 100ms period
+    cpu_period: 100000
+    memory_mb: 8192
+    memory_swap_mb: 16384
+    disk_size_gb: 50
+    pids_limit: 1000
+    description: "ML inference, large-scale data processing"

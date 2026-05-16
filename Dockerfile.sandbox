@@ -1,0 +1,41 @@
+# PRO-15: Execution Sandbox Image
+# This is the base image for job execution containers.
+# Workers run arbitrary commands inside containers built from this image.
+# Built with security hardening: non-root user, minimal packages, no shell history.
+
+FROM python:3.11-slim-bookworm
+
+# Security: run as non-root
+RUN groupadd -r executor -g 1000 && \
+    useradd -r -g executor -u 1000 -m -s /bin/bash executor
+
+# Install only essential packages — no build tools by default
+# iptables is included for network egress policy enforcement (PRO-34)
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    git \
+    curl \
+    ca-certificates \
+    iptables \
+    conntrack \
+    # For Node.js toolchain (common dependency)
+    nodejs \
+    npm \
+    && rm -rf /var/lib/apt/lists/* \
+    && rm -rf /root/.cache
+
+# Set up workspace directory
+RUN mkdir -p /workspace && chown executor:executor /workspace
+
+# Security hardening
+# Disable shell history
+RUN echo "unset HISTFILE" >> /etc/bash.bashrc && \
+    echo "set +o history" >> /etc/bash.bashrc
+
+# Default to executor user
+USER executor
+WORKDIR /workspace
+
+# Entry point: exec the command passed by the worker manager
+# The worker manager sets ENTRYPOINT/CMD overrides, this is the fallback
+ENTRYPOINT ["/bin/bash", "-c"]
+CMD ["echo 'Execution sandbox ready'"]

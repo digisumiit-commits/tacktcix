@@ -1,0 +1,51 @@
+{
+  "defaultAction": "SCMP_ACT_KILL",
+  "architectures": ["SCMP_ARCH_X86_64"],
+  "syscalls": [
+    {
+      "names": [
+        "accept", "accept4", "access", "arch_prctl", "bind",
+        "brk", "chdir", "chmod", "chown", "clock_gettime",
+        "clock_nanosleep", "clone", "clone3", "close", "connect",
+        "dup", "dup2", "dup3", "epoll_create1", "epoll_ctl",
+        "epoll_pwait", "epoll_wait", "execve", "execveat", "exit",
+        "exit_group", "faccessat", "faccessat2", "fchdir", "fchmod",
+        "fchmodat", "fchown", "fchownat", "fcntl", "fork",
+        "fstat", "futex", "futex_waitv", "futex_wake", "getcwd",
+        "getdents", "getdents64", "getegid", "geteuid", "getgid",
+        "getpeername", "getpid", "getppid", "getrandom", "getrusage",
+        "getrlimit", "getsockname", "getsockopt", "gettid", "gettimeofday",
+        "getuid", "ioctl", "kill", "link", "linkat",
+        "listen", "lseek", "lstat", "madvise", "mkdir",
+        "mkdirat", "mmap", "mprotect", "mremap", "mseal",
+        "munmap", "nanosleep", "newfstatat", "openat", "openat2",
+        "poll", "ppoll", "prctl", "pread64", "prlimit64",
+        "pwrite64", "read", "readlink", "readlinkat", "readv",
+        "recvfrom", "recvmsg", "rename", "renameat", "renameat2",
+        "rmdir", "rseq", "rt_sigaction", "rt_sigprocmask", "rt_sigreturn",
+        "sched_getaffinity", "sched_setaffinity", "sched_yield", "seccomp", "sendmsg",
+        "sendto", "set_robust_list", "set_tid_address", "setsockopt", "shutdown",
+        "sigaltstack", "socket", "stat", "symlink", "symlinkat",
+        "tgkill", "time", "uname", "unlink", "unlinkat",
+        "vfork", "wait4", "waitid", "write", "writev"
+      ],
+      "action": "SCMP_ACT_ALLOW"
+    },
+    {
+      "names": [
+        "acct", "add_key", "bpf", "capget", "capset",
+        "chroot", "create_module", "delete_module", "finit_module", "init_module",
+        "ioperm", "iopl", "ioprio_get", "ioprio_set", "kcmp",
+        "kexec_file_load", "kexec_load", "keyctl", "lookup_dcookie",
+        "mbind", "migrate_pages", "modify_ldt", "mount", "move_pages",
+        "nfsservctl", "perf_event_open", "personality", "pivot_root",
+        "process_vm_readv", "process_vm_writev", "ptrace",
+        "reboot", "request_key", "setfsgid", "setfsuid", "setgid",
+        "setns", "setregid", "setresgid", "setresuid", "setreuid",
+        "setuid", "swapoff", "swapon", "syslog", "_sysctl",
+        "umount2", "unshare", "userfaultfd"
+      ],
+      "action": "SCMP_ACT_KILL"
+    }
+  ]
+}
