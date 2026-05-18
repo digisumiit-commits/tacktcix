@@ -16,17 +16,19 @@ jobs:
       - name: Set up Node
         uses: actions/setup-node@v4
         with:
-          node-version: '22'
+          node-version: '20'
 
       - name: Install dependencies
         working-directory: apps/web
-        run: npm install
+        run: |
+          rm -f package-lock.json
+          npm install
 
       - name: Build static export
         working-directory: apps/web
         run: |
-          # Temporarily configure static export
-          cat > next.config.export.js << 'NEXTJS'
+          cp next.config.js next.config.bak.js
+          cat > next.config.js << 'NEXTJS'
           /** @type {import('next').NextConfig} */
           const nextConfig = {
             output: "export",
@@ -36,9 +38,7 @@ jobs:
           };
           module.exports = nextConfig;
           NEXTJS
-          cp next.config.js next.config.bak.js
-          cp next.config.export.js next.config.js
-          npm run build
+          npx next build
           cp next.config.bak.js next.config.js
           touch out/.nojekyll
 
