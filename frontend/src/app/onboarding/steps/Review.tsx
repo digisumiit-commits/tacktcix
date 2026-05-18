@@ -32,7 +32,7 @@ export default function Review({ stepData, onNext, onBack }: Props) {
 
         <Section title="Vision">
           <Field label="Length" value={vision.vision_text ? `${(vision.vision_text as string).split(/\s+/).length} words` : "Not provided"} />
-          {vision.vision_text && (
+          {(vision.vision_text as string) && (
             <p className="text-xs text-gray-500 mt-1 line-clamp-3">{(vision.vision_text as string).slice(0, 300)}...</p>
           )}
         </Section>
