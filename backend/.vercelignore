@@ -1,0 +1,10 @@
+alembic/
+alembic.ini
+prisma/
+tests/
+pyproject.toml
+Dockerfile
+__pycache__/
+*.pyc
+.venv/
+venv/
