@@ -24,7 +24,7 @@ class TaskGenerationService:
                     status="todo",
                     priority="high" if phase["order"] <= 2 else "medium",
                     assignee_role=self._infer_assignee(deliverable, phase),
-                    metadata={"phase": phase_key, "phase_order": phase["order"], "deliverable_index": i},
+                    meta={"phase": phase_key, "phase_order": phase["order"], "deliverable_index": i},
                 )
                 self.db.add(task)
                 tasks.append(task)
@@ -55,11 +55,11 @@ class TaskGenerationService:
         """Set sequential dependencies within each phase."""
         phase_tasks = {}
         for task in tasks:
-            phase_key = task.metadata.get("phase")
+            phase_key = task.meta.get("phase")
             phase_tasks.setdefault(phase_key, []).append(task)
 
         for phase_tasks_list in phase_tasks.values():
-            phase_tasks_list.sort(key=lambda t: t.metadata.get("deliverable_index", 0))
+            phase_tasks_list.sort(key=lambda t: t.meta.get("deliverable_index", 0))
             for i in range(1, len(phase_tasks_list)):
                 prev_task = phase_tasks_list[i - 1]
                 current = phase_tasks_list[i]

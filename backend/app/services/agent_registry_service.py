@@ -119,7 +119,7 @@ class AgentRegistryService:
             capabilities=payload.capabilities or ROLE_CAPABILITIES.get(payload.role, {}),
             cost_per_task=payload.cost_per_task if payload.cost_per_task != 1.0 else ROLE_COST.get(payload.role, 1.0),
             max_concurrent_tasks=payload.max_concurrent_tasks,
-            metadata=payload.metadata,
+            meta=payload.metadata,
             status="idle",
             current_load=0,
         )
@@ -208,7 +208,7 @@ class AgentRegistryService:
         agent.current_load = current_load
         agent.status = status
         if metadata:
-            agent.metadata = {**(agent.metadata or {}), **metadata}
+            agent.meta = {**(agent.meta or {}), **metadata}
         await self.db.flush()
         return agent
 

@@ -121,7 +121,7 @@ class Task(Base):
     assignee_agent_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("agents.id"), nullable=True)
     parent_task_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("tasks.id"))
     dependencies: Mapped[dict | None] = mapped_column(JSON)
-    metadata: Mapped[dict | None] = mapped_column(JSON)
+    meta: Mapped[dict | None] = mapped_column("metadata", JSON)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
@@ -150,11 +150,7 @@ class ActivityEvent(Base):
     source_id: Mapped[str | None] = mapped_column(String(255))
     title: Mapped[str] = mapped_column(String(500))
     description: Mapped[str | None] = mapped_column(Text)
-    metadata: Mapped[dict | None] = mapped_column(JSON)
+    meta: Mapped[dict | None] = mapped_column("metadata", JSON)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
 
-    __table_args__ = (
-        {"indexes": [
-            # Composite index for the common query pattern: events for a company ordered by time
-        ]},
-    )
+    # Indexes are auto-generated from Column(index=True) declarations above

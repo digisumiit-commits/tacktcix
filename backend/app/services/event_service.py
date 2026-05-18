@@ -104,7 +104,7 @@ class EventService:
             source_id=source_id,
             title=title,
             description=description,
-            metadata=metadata or {},
+            meta=metadata or {},
         )
         self.db.add(event)
         await self.db.flush()
@@ -118,7 +118,7 @@ class EventService:
             "source_id": event.source_id,
             "title": event.title,
             "description": event.description,
-            "metadata": event.metadata,
+            "metadata": event.meta,
             "created_at": event.created_at.isoformat(),
         })
 

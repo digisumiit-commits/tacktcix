@@ -119,7 +119,7 @@ class TestRecordEvent:
         assert event.source == "system"
         assert event.title == "Test event"
         assert event.description == "A test"
-        assert event.metadata == {"key": "val"}
+        assert event.meta == {"key": "val"}
         mock_db.add.assert_called_once()
         mock_db.flush.assert_awaited_once()
 
@@ -141,7 +141,7 @@ class TestRecordEvent:
         )
 
         assert event.title == "Minimal event"
-        assert event.metadata == {}
+        assert event.meta == {}
         assert event.source_id is None
         assert event.description is None
 
@@ -167,8 +167,8 @@ class TestConvenienceMethods:
         assert event.type == EventTypes.TASK_TRANSITION
         assert "Build feature" in event.title
         assert "in_progress" in event.title
-        assert event.metadata["old_status"] == "todo"
-        assert event.metadata["new_status"] == "in_progress"
+        assert event.meta["old_status"] == "todo"
+        assert event.meta["new_status"] == "in_progress"
 
     async def test_agent_action(self, svc, mock_db):
         cid = uuid.uuid4()

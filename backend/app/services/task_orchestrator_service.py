@@ -244,8 +244,8 @@ class TaskOrchestrator:
             task_map: dict[str, TaskModel] = {}
             for t in tasks:
                 domains = []
-                if t.metadata and "required_domains" in t.metadata:
-                    domains = t.metadata["required_domains"]
+                if t.meta and "required_domains" in t.meta:
+                    domains = t.meta["required_domains"]
                 requests.append(AgentRouteRequest(
                     task_title=t.title,
                     task_description=t.description or "",
@@ -287,8 +287,8 @@ class TaskOrchestrator:
         else:
             for t in tasks:
                 domains = []
-                if t.metadata and "required_domains" in t.metadata:
-                    domains = t.metadata["required_domains"]
+                if t.meta and "required_domains" in t.meta:
+                    domains = t.meta["required_domains"]
                 req = AgentRouteRequest(
                     task_title=t.title,
                     task_description=t.description or "",

@@ -12,13 +12,22 @@
     "test": "node tests/smoke.js",
     "start": "node src/index.js"
   },
-  "keywords": ["playwright", "browserless", "stagehand", "browser-automation"],
+  "keywords": [
+    "playwright",
+    "browserless",
+    "stagehand",
+    "browser-automation"
+  ],
   "author": "PromptIt DevOps",
   "license": "UNLICENSED",
   "private": true,
   "type": "commonjs",
   "dependencies": {
     "@browserbasehq/stagehand": "^3.4.0",
-    "playwright": "^1.60.0"
+    "@electric-sql/pglite": "^0.4.5",
+    "neonctl": "^2.22.0",
+    "playwright": "^1.60.0",
+    "supabase": "^2.98.2",
+    "vercel": "^54.1.0"
   }
 }

@@ -26,7 +26,7 @@ class Agent(Base):
     cost_per_task: Mapped[float] = mapped_column(Float, default=1.0)       # relative cost unit
     max_concurrent_tasks: Mapped[int] = mapped_column(Integer, default=3)
     current_load: Mapped[int] = mapped_column(Integer, default=0)          # active tasks count
-    metadata: Mapped[dict[str, Any] | None] = mapped_column(JSON)
+    meta: Mapped[dict[str, Any] | None] = mapped_column("metadata", JSON)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 

@@ -466,7 +466,7 @@ class MockTask:
         self.assignee_role = assignee_role
         self.priority = priority
         self.description = description
-        self.metadata = metadata or {}
+        self.meta = metadata or {}
         self.assignee_agent_id = None
 
 
