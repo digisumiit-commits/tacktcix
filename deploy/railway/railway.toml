@@ -1,32 +1,24 @@
-# Railway multi-service deployment config
-# Deploy: railway up --detach
-
 [build]
-builder = "DOCKERFILE"
+builder = "nixpacks"
 
-[service.backend]
+[deploy]
+healthcheckPath = "/health"
+restartPolicyMaxRetries = 3
+
+[environments.staging]
+[environments.staging.deploy]
+numReplicas = 1
+
+[environments.production]
+[environments.production.deploy]
+numReplicas = 2
+
+[service]
+name = "api"
+watchPatterns = ["backend/**"]
+
+[service.build]
 dockerfilePath = "backend/Dockerfile"
-healthcheckPath = "/api/health"
-healthcheckTimeout = 30
-restartPolicyType = "ON_FAILURE"
 
-[service.backend.tcpProxy]
-port = 8000
-
-[service.frontend]
-dockerfilePath = "apps/web/Dockerfile"
-restartPolicyType = "ON_FAILURE"
-
-[service.frontend.tcpProxy]
-port = 3000
-
-[service.postgres]
-image = "postgres:16-alpine"
-
-[service.redis]
-image = "redis:7-alpine"
-
-# Environment variables set in Railway dashboard:
-#   TACKTCIX_DATABASE_URL - set via Railway PostgreSQL reference
-#   TACKTCIX_REDIS_URL - set via Railway Redis reference
-#   NEXT_PUBLIC_API_URL - set to backend Railway URL
+[service.environment]
+port = "8000"

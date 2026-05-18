@@ -1,0 +1,98 @@
+# PRO-86: Sandbox testing environment override.
+# Used for isolated integration testing of sandbox containers.
+#
+# Usage:
+#   docker compose -f docker-compose.yml -f docker-compose.test.yml up -d
+#   pytest tests/ -m docker
+#   docker compose -f docker-compose.yml -f docker-compose.test.yml down
+#
+# Extends the base compose file with:
+# - Test-specific resource profiles (smaller limits for faster CI)
+# - Separate test network for network isolation verification
+# - Test runner service for automated test execution
+# - Prometheus metrics exporter scoped to sandbox tests
+
+version: "3.8"
+
+services:
+  # Override worker for testing: lower resource limits, test image
+  worker:
+    build:
+      context: .
+      dockerfile: Dockerfile.sandbox
+    image: execution-sandbox:test
+    container_name: sandbox-test-worker
+    environment:
+      - WORKER_ID=sandbox-test-worker
+      - LOG_LEVEL=debug
+      - HEALTH_PORT=9090
+      - WORKER_EXEC_IMAGE=execution-sandbox:test
+    ports:
+      - "9090:8080"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+      start_period: 5s
+
+  # Test runner — builds sandbox image, runs pytest, collects results
+  test-runner:
+    build:
+      context: .
+      dockerfile: Dockerfile.sandbox
+    image: execution-sandbox:test
+    container_name: sandbox-test-runner
+    command: >
+      sh -c "
+        pip install pytest pytest-asyncio &&
+        pytest tests/ -m docker -v --junitxml=/workspace/test-results.xml
+      "
+    depends_on:
+      worker:
+        condition: service_healthy
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - ./tests:/workspace/tests:ro
+      - ./src:/workspace/src:ro
+      - ./config:/workspace/config:ro
+      - ./requirements.txt:/workspace/requirements.txt:ro
+    networks:
+      - sandbox-test-net
+    environment:
+      - DOCKER_HOST=unix:///var/run/docker.sock
+      - LOG_LEVEL=debug
+      - PYTHONDONTWRITEBYTECODE=1
+    security_opt:
+      - no-new-privileges:true
+    read_only: true
+    tmpfs:
+      - /tmp:size=128M
+
+  # Additional sandbox-test-specific network for isolation verification
+  sandbox-test-isolated-net:
+    image: alpine:3.19
+    container_name: sandbox-test-isolated-net
+    command: ["sleep", "infinity"]
+    networks:
+      - sandbox-test-isolated-net
+    profiles:
+      - manual
+    # Only started manually for specific network isolation tests
+
+networks:
+  sandbox-test-net:
+    driver: bridge
+    internal: true
+    labels:
+      paperclip.network: sandbox-test
+      paperclip.env: test
+  sandbox-test-isolated-net:
+    driver: bridge
+    internal: true
+    labels:
+      paperclip.network: sandbox-test-isolated
+      paperclip.env: test
+
+volumes:
+  test-results:

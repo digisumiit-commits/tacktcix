@@ -1,0 +1,69 @@
+name: Post-Deploy Monitoring
+
+on:
+  workflow_run:
+    workflows: [Deploy]
+    types: [completed]
+  schedule:
+    - cron: '*/5 * * * *'  # Every 5 minutes
+  workflow_dispatch:
+
+jobs:
+  health-monitor:
+    name: Health Monitor
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Health check production
+        env:
+          PRODUCTION_URL: ${{ vars.PRODUCTION_URL }}
+        run: |
+          bash infra/monitoring/health-check.sh "$PRODUCTION_URL" 60
+
+      - name: Health check staging
+        env:
+          STAGING_URL: ${{ vars.STAGING_URL }}
+        run: |
+          bash infra/monitoring/health-check.sh "$STAGING_URL" 60
+
+      - name: Notify on failure
+        if: failure()
+        uses: slackapi/slack-github-action@v2
+        with:
+          webhook: ${{ secrets.SLACK_WEBHOOK_URL }}
+          webhook-type: incoming-webhook
+          payload: |
+            {
+              "text": ":red_circle: TACKTCIX health check failed — <${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|View run>"
+            }
+
+  metrics-check:
+    name: Metrics & SLOs
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check Prometheus SLOs
+        env:
+          PROMETHEUS_URL: ${{ vars.PROMETHEUS_URL }}
+        run: |
+          # Error budget: 99.9% availability (43m downtime/month)
+          ERROR_BUDGET=0.001
+
+          UPTIME=$(curl -sf "$PROMETHEUS_URL/api/v1/query?query=avg_over_time(up[30d])" | \
+            jq -r '.data.result[0].value[1] // "0"')
+
+          if (( $(echo "$UPTIME < 1 - $ERROR_BUDGET" | bc -l) )); then
+            echo "::warning::Error budget exhausted: uptime = $UPTIME"
+            exit 1
+          fi
+
+          echo "Uptime within SLO: $UPTIME"
+
+      - name: Check recent deployment status
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          gh run list --workflow=deploy.yml --limit=5 --json conclusion,displayTitle,createdAt \
+            | jq '.'

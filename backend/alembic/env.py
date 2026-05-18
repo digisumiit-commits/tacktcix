@@ -6,7 +6,8 @@ from sqlalchemy.ext.asyncio import create_async_engine
 
 from app.core.config import settings
 from app.core.database import Base
-from app.models.company import Company, OnboardingSession, KnowledgeGraph, Constitution, Roadmap, ArchitecturePlan, Task, Workflow
+from app.models.company import Company, OnboardingSession, KnowledgeGraph, Constitution, Roadmap, ArchitecturePlan, Task, Workflow, ActivityEvent
+from app.models.agent import Agent
 
 config = context.config
 if config.config_file_name is not None:

@@ -1,0 +1,171 @@
+name: Deploy
+
+on:
+  workflow_run:
+    workflows: [QA Validation]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      target:
+        description: 'Deployment target'
+        required: true
+        type: choice
+        options:
+          - staging
+          - production
+      services:
+        description: 'Services to deploy'
+        type: choice
+        options:
+          - all
+          - frontend-only
+          - backend-only
+
+concurrency:
+  group: deploy-${{ github.event.inputs.target || 'staging' }}
+  cancel-in-progress: false
+
+jobs:
+  deploy-frontend:
+    name: Deploy Frontend (Vercel)
+    if: ${{ github.event.inputs.services == 'all' || github.event.inputs.services == 'frontend-only' || github.event_name == 'workflow_run' }}
+    runs-on: ubuntu-latest
+    environment: ${{ github.event.inputs.target || 'staging' }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Deploy to Vercel
+        uses: amondnet/vercel-action@v25
+        with:
+          vercel-token: ${{ secrets.VERCEL_TOKEN }}
+          vercel-org-id: ${{ secrets.VERCEL_ORG_ID }}
+          vercel-project-id: ${{ secrets.VERCEL_PROJECT_ID }}
+          vercel-args: ${{ github.event.inputs.target == 'production' && '--prod' || '' }}
+          working-directory: ./frontend
+
+      - name: Verify Vercel deployment
+        env:
+          VERCEL_URL: ${{ github.event.inputs.target == 'production' && vars.PRODUCTION_URL || vars.STAGING_URL }}
+        run: |
+          for i in $(seq 1 30); do
+            STATUS=$(curl -s -o /dev/null -w "%{http_code}" "$VERCEL_URL/api/health" || echo "000")
+            if [ "$STATUS" = "200" ]; then
+              echo "Frontend healthy after ${i}s"
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "Frontend health check failed"
+          exit 1
+
+  deploy-backend:
+    name: Deploy Backend (Railway)
+    if: ${{ github.event.inputs.services == 'all' || github.event.inputs.services == 'backend-only' || github.event_name == 'workflow_run' }}
+    runs-on: ubuntu-latest
+    environment: ${{ github.event.inputs.target || 'staging' }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Railway CLI
+        run: |
+          curl -fsSL https://railway.app/install.sh | sh
+          echo "$HOME/.railway/bin" >> $GITHUB_PATH
+
+      - name: Deploy to Railway
+        env:
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+        run: |
+          railway link --project ${{ secrets.RAILWAY_PROJECT_ID }}
+          railway up --service api --environment ${{ github.event.inputs.target || 'staging' }} --detach
+
+      - name: Run database migrations
+        env:
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+        run: |
+          railway run --service api --environment ${{ github.event.inputs.target || 'staging' }} \
+            "python -m alembic upgrade head"
+
+      - name: Verify Railway deployment
+        run: |
+          RAILWAY_DOMAIN=$(railway domain --service api --environment ${{ github.event.inputs.target || 'staging' }} 2>/dev/null || echo "")
+          if [ -z "$RAILWAY_DOMAIN" ]; then
+            echo "No custom domain — checking Railway-generated URL"
+          fi
+          for i in $(seq 1 30); do
+            STATUS=$(curl -s -o /dev/null -w "%{http_code}" "https://api.${RAILWAY_DOMAIN:-railway.app}/health" || echo "000")
+            if [ "$STATUS" = "200" ]; then
+              echo "Backend healthy after ${i}s"
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "Backend health check failed"
+          exit 1
+
+  deploy-tag:
+    name: Tag Release
+    needs: [deploy-frontend, deploy-backend]
+    if: always() && !failure()
+    runs-on: ubuntu-latest
+    environment: ${{ github.event.inputs.target || 'staging' }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Generate version tag
+        run: |
+          DATE=$(date +%Y%m%d-%H%M)
+          TARGET="${{ github.event.inputs.target || 'staging' }}"
+          echo "TAG=${TARGET}-${DATE}-${GITHUB_SHA:0:7}" >> $GITHUB_ENV
+
+      - name: Create and push tag
+        run: |
+          git tag "$TAG"
+          git push origin "$TAG"
+
+      - name: Create GitHub Release
+        if: github.event.inputs.target == 'production'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ env.TAG }}
+          name: "Production Release ${{ env.TAG }}"
+          body: |
+            ## Deployed Services
+            - **Frontend:** Vercel (production)
+            - **Backend:** Railway (production)
+            - **CI Run:** ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          draft: false
+          prerelease: false
+
+  rollback:
+    name: Rollback (if needed)
+    if: failure()
+    runs-on: ubuntu-latest
+    environment: ${{ github.event.inputs.target || 'staging' }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Rollback Vercel
+        if: needs.deploy-frontend.result == 'failure'
+        uses: amondnet/vercel-action@v25
+        with:
+          vercel-token: ${{ secrets.VERCEL_TOKEN }}
+          vercel-org-id: ${{ secrets.VERCEL_ORG_ID }}
+          vercel-project-id: ${{ secrets.VERCEL_PROJECT_ID }}
+          vercel-command: rollback
+          working-directory: ./frontend
+
+      - name: Rollback Railway
+        if: needs.deploy-backend.result == 'failure'
+        env:
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+        run: |
+          railway link --project ${{ secrets.RAILWAY_PROJECT_ID }}
+          railway rollback --service api --environment ${{ github.event.inputs.target || 'staging' }}
+
+      - name: Notify on-call
+        run: |
+          echo "## Deployment Rollback Triggered" >> $GITHUB_STEP_SUMMARY
+          echo "**Run:** ${{ github.run_id }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Target:** ${{ github.event.inputs.target || 'staging' }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Failed jobs:** frontend=${{ needs.deploy-frontend.result }}, backend=${{ needs.deploy-backend.result }}" >> $GITHUB_STEP_SUMMARY

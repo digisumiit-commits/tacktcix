@@ -19,13 +19,13 @@ jobs:
           node-version: '20'
 
       - name: Install dependencies
-        working-directory: apps/web
+        working-directory: frontend
         run: |
           rm -f package-lock.json
           npm install
 
       - name: Build static export
-        working-directory: apps/web
+        working-directory: frontend
         run: |
           cp next.config.js next.config.bak.js
           cat > next.config.js << 'NEXTJS'
@@ -46,5 +46,5 @@ jobs:
         uses: peaceiris/actions-gh-pages@v4
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
-          publish_dir: apps/web/out
+          publish_dir: frontend/out
           publish_branch: gh-pages

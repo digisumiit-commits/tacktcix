@@ -1,102 +1,171 @@
-version: "3.9"
+version: "3.8"
+
+# PRO-15: Execution Worker Runtime
+# Container-per-job architecture with Redis Streams for job queuing
+# PRO-40: Heartbeat engine + PostgreSQL wired in for Paperclip agent lifecycle
 
 services:
   postgres:
     image: postgres:16-alpine
+    container_name: execution-postgres
     environment:
-      POSTGRES_USER: tacktcix
-      POSTGRES_PASSWORD: tacktcix
-      POSTGRES_DB: tacktcix
-    ports:
-      - "5432:5432"
+      - POSTGRES_USER=${POSTGRES_USER:-paperclip}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-paperclip}
+      - POSTGRES_DB=${POSTGRES_DB:-paperclip}
     volumes:
-      - pgdata:/var/lib/postgresql/data
-      - ./db/init:/docker-entrypoint-initdb.d
-      - ./db/migrations:/migrations
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    networks:
+      - execution-net
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U tacktcix"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-paperclip} -d ${POSTGRES_DB:-paperclip}"]
       interval: 5s
-      timeout: 5s
+      timeout: 3s
       retries: 5
+    restart: unless-stopped
 
   redis:
     image: redis:7-alpine
-    ports:
-      - "6379:6379"
+    container_name: execution-redis
+    command: >
+      redis-server
+      --appendonly yes
+      --maxmemory 256mb
+      --maxmemory-policy allkeys-lru
+      --save 900 1
+      --save 300 10
     volumes:
-      - redisdata:/data
+      - redis_data:/data
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    networks:
+      - execution-net
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 5s
-      timeout: 5s
+      timeout: 3s
       retries: 5
+    restart: unless-stopped
 
-  qdrant:
-    image: qdrant/qdrant:latest
-    ports:
-      - "6333:6333"
-      - "6334:6334"
-    volumes:
-      - qdrantdata:/qdrant/storage
-    environment:
-      QDRANT__SERVICE__GRPC_PORT: 6334
-
-  neo4j:
-    image: neo4j:5-community
-    ports:
-      - "7474:7474"
-      - "7687:7687"
-    environment:
-      NEO4J_AUTH: neo4j/password
-      NEO4J_PLUGINS: '["apoc"]'
-    volumes:
-      - neo4jdata:/data
-      - neo4jlogs:/logs
-    healthcheck:
-      test: ["CMD", "cypher-shell", "-u", "neo4j", "-p", "password", "RETURN 1"]
-      interval: 10s
-      timeout: 10s
-      retries: 5
-
-  backend:
+  heartbeat-engine:
     build:
-      context: ./backend
-      dockerfile: Dockerfile
-    ports:
-      - "8000:8000"
-    environment:
-      TACKTCIX_DATABASE_URL: postgresql+asyncpg://tacktcix:tacktcix@postgres:5432/tacktcix
-      TACKTCIX_REDIS_URL: redis://redis:6379/0
-      TACKTCIX_QDRANT_URL: http://qdrant:6333
-      TACKTCIX_NEO4J_URL: bolt://neo4j:7687
-      TACKTCIX_DEBUG: "true"
+      context: .
+      dockerfile: Dockerfile.heartbeat
+    container_name: execution-heartbeat
     depends_on:
       postgres:
         condition: service_healthy
       redis:
         condition: service_healthy
-    volumes:
-      - ./backend:/app
-    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
-
-  frontend:
-    build:
-      context: ./apps/web
-      dockerfile: Dockerfile
-    ports:
-      - "3000:3000"
     environment:
-      API_URL: http://backend:8000
+      - PAPERCLIP_API_URL=${PAPERCLIP_API_URL:-http://localhost:3000}
+      - PAPERCLIP_AGENT_ID=${PAPERCLIP_AGENT_ID:-}
+      - PAPERCLIP_COMPANY_ID=${PAPERCLIP_COMPANY_ID:-}
+      - PAPERCLIP_API_KEY=${PAPERCLIP_API_KEY:-}
+      - DATABASE_URL=postgresql://${POSTGRES_USER:-paperclip}:${POSTGRES_PASSWORD:-paperclip}@postgres:5432/${POSTGRES_DB:-paperclip}
+      - REDIS_URL=redis://redis:6379
+      - HEARTBEAT_PORT=3001
+      - HEARTBEAT_INTERVAL_MS=${HEARTBEAT_INTERVAL_MS:-10000}
+      - LOG_LEVEL=${LOG_LEVEL:-info}
+    ports:
+      - "${HEARTBEAT_PORT:-3001}:3001"
+    networks:
+      - execution-net
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://localhost:3001/health').then(r => { if (r.ok) process.exit(0); else process.exit(1); })"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    read_only: true
+    tmpfs:
+      - /tmp:size=64M
+
+  worker:
+    build:
+      context: .
+      dockerfile: Dockerfile.worker
+    container_name: execution-worker
     depends_on:
-      - backend
+      redis:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+    environment:
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - PG_HOST=postgres
+      - PG_PORT=5432
+      - PG_USER=${POSTGRES_USER:-paperclip}
+      - PG_PASSWORD=${POSTGRES_PASSWORD:-paperclip}
+      - PG_DB=${POSTGRES_DB:-paperclip}
+      - DOCKER_HOST=unix:///var/run/docker.sock
+      - HEALTH_PORT=8080
+      - LOG_LEVEL=${LOG_LEVEL:-info}
+      - WORKER_ID=${WORKER_ID:-worker-1}
     volumes:
-      - ./apps/web:/app
-      - /app/node_modules
-    command: npm run dev
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - worker_workspaces:/workspaces
+    ports:
+      - "${HEALTH_PORT:-8080}:8080"
+    networks:
+      - execution-net
+      - sandbox-net
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    read_only: true
+    tmpfs:
+      - /tmp:size=128M
+
+  # Scale out additional workers
+  worker-2:
+    profiles: ["scale"]
+    extends:
+      service: worker
+    container_name: execution-worker-2
+    environment:
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - DOCKER_HOST=unix:///var/run/docker.sock
+      - HEALTH_PORT=8081
+      - LOG_LEVEL=${LOG_LEVEL:-info}
+      - WORKER_ID=worker-2
+    ports:
+      - "8081:8080"
+
+  worker-3:
+    profiles: ["scale"]
+    extends:
+      service: worker
+    container_name: execution-worker-3
+    environment:
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - DOCKER_HOST=unix:///var/run/docker.sock
+      - HEALTH_PORT=8082
+      - LOG_LEVEL=${LOG_LEVEL:-info}
+      - WORKER_ID=worker-3
+    ports:
+      - "8082:8080"
 
 volumes:
-  pgdata:
-  redisdata:
-  qdrantdata:
-  neo4jdata:
-  neo4jlogs:
+  postgres_data:
+  redis_data:
+  worker_workspaces:
+
+networks:
+  execution-net:
+    internal: false
+  sandbox-net:
+    internal: true
+    # Sandbox containers are on an internal network — no outbound by default

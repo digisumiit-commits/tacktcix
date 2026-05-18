@@ -1,44 +1,24 @@
 {
-  "name": "tacktcix-orchestration",
+  "name": "browser-automation-infrastructure",
   "version": "1.0.0",
-  "description": "TACKTCIX Task Orchestration Engine",
-  "main": "dist/index.js",
+  "description": "Managed isolated browser sessions using Playwright + Browserless + Stagehand with encrypted auth storage, screenshot capture, and retry/fallback selector strategies.",
+  "main": "src/index.js",
+  "directories": {
+    "src": "src",
+    "test": "tests",
+    "config": "config"
+  },
   "scripts": {
-    "build": "tsc",
-    "start": "node dist/index.js",
-    "dev": "tsx watch src/index.ts",
-    "test": "vitest run",
-    "test:watch": "vitest",
-    "migrate": "tsx src/db/migrate.ts",
-    "lint": "eslint src/"
+    "test": "node tests/smoke.js",
+    "start": "node src/index.js"
   },
+  "keywords": ["playwright", "browserless", "stagehand", "browser-automation"],
+  "author": "PromptIt DevOps",
+  "license": "UNLICENSED",
+  "private": true,
+  "type": "commonjs",
   "dependencies": {
-    "@prisma/client": "^5.7.0",
-    "bcryptjs": "^2.4.3",
-    "cookie-parser": "^1.4.6",
-    "cors": "^2.8.5",
-    "express": "^4.18.2",
-    "ioredis": "^5.3.2",
-    "jsonwebtoken": "^9.0.3",
-    "passport": "^0.7.0",
-    "passport-github2": "^0.1.12",
-    "passport-google-oauth20": "^2.0.0",
-    "pg": "^8.11.3",
-    "uuid": "^9.0.0",
-    "zod": "^3.22.4"
-  },
-  "devDependencies": {
-    "@types/bcryptjs": "^2.4.6",
-    "@types/cookie-parser": "^1.4.7",
-    "@types/cors": "^2.8.17",
-    "@types/express": "^4.17.21",
-    "@types/node": "^20.10.0",
-    "@types/passport": "^1.0.16",
-    "@types/pg": "^8.10.9",
-    "@types/uuid": "^9.0.7",
-    "eslint": "^8.54.0",
-    "tsx": "^4.6.2",
-    "typescript": "^5.3.2",
-    "vitest": "^1.0.4"
+    "@browserbasehq/stagehand": "^3.4.0",
+    "playwright": "^1.60.0"
   }
 }

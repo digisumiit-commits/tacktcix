@@ -10,6 +10,9 @@ from app.services.constitution_service import ConstitutionService
 from app.services.roadmap_service import RoadmapService
 from app.services.architecture_service import ArchitectureService
 from app.services.task_generation_service import TaskGenerationService
+from app.services.agent_registry_service import AgentRegistryService
+from app.services.task_orchestrator_service import TaskOrchestrator
+from app.services.event_service import EventService, EventTypes
 
 
 STEP_KEYS = [
@@ -27,11 +30,14 @@ STEP_KEYS = [
 class OnboardingService:
     def __init__(self, db: AsyncSession):
         self.db = db
+        self.events = EventService(db)
         self.kg_service = KnowledgeGraphService(db)
         self.constitution_service = ConstitutionService(db)
         self.roadmap_service = RoadmapService(db)
         self.architecture_service = ArchitectureService(db)
         self.task_service = TaskGenerationService(db)
+        self.agent_registry = AgentRegistryService(db, self.events)
+        self.orchestrator = TaskOrchestrator(db, self.events)
 
     async def create_company(self, name: str, slug: str, description: str | None = None,
                              industry: str | None = None, size: str | None = None) -> Company:
@@ -40,9 +46,27 @@ class OnboardingService:
         self.db.add(company)
         await self.db.flush()
 
+        # Seed default agent team for the new company
+        agents = await self.agent_registry.seed_default_agents(company.id)
+        await self.events.workflow_event(
+            company_id=company.id,
+            workflow_name="Company Setup",
+            event="agents_seeded",
+            description=f"Seeded {len(agents)} default agents for {name}",
+        )
+
         session = OnboardingSession(company_id=company.id, current_step=0, total_steps=len(STEP_KEYS))
         self.db.add(session)
         await self.db.flush()
+
+        await self.events.task_transition(
+            company_id=company.id,
+            task_title="Onboarding started",
+            old_status="not_started",
+            new_status="in_progress",
+            source="system",
+            description=f"Onboarding session created for {name}",
+        )
         return company
 
     async def get_session(self, company_id: UUID) -> OnboardingSession | None:
@@ -106,14 +130,66 @@ class OnboardingService:
 
         vision = session.vision_raw
 
+        await self.events.workflow_event(
+            company_id=company_id,
+            workflow_name="Onboarding Processing",
+            event="started",
+            description="Starting full vision-to-structured-output pipeline",
+        )
+
         knowledge_graph = await self.kg_service.generate_from_vision(company_id, vision)
+        await self.events.workflow_event(
+            company_id=company_id,
+            workflow_name="Onboarding Processing",
+            event="knowledge_graph_generated",
+            description=f"Generated knowledge graph with {len(knowledge_graph.nodes or {})} nodes",
+        )
+
         constitution = await self.constitution_service.generate(company_id, vision, knowledge_graph.nodes)
+        await self.events.workflow_event(
+            company_id=company_id,
+            workflow_name="Onboarding Processing",
+            event="constitution_generated",
+            description="Company constitution generated from vision",
+        )
+
         roadmap = await self.roadmap_service.generate(company_id, vision, knowledge_graph.nodes)
+        await self.events.workflow_event(
+            company_id=company_id,
+            workflow_name="Onboarding Processing",
+            event="roadmap_generated",
+            description=f"Generated roadmap with {len(roadmap.phases or {})} phases",
+        )
+
         architecture = await self.architecture_service.generate(
             company_id, vision, knowledge_graph.nodes, company.selected_models
         )
+        await self.events.workflow_event(
+            company_id=company_id,
+            workflow_name="Onboarding Processing",
+            event="architecture_generated",
+            description="System architecture plan generated",
+        )
+
         tasks = await self.task_service.generate_tasks(company_id, roadmap.phases)
         workflows = await self.task_service.generate_workflows(company_id, tasks)
+
+        # Route generated tasks to the best-fit agents via the orchestrator
+        route_results = await self.orchestrator.assign_tasks(company_id, tasks, batch=True)
+        routed_count = sum(1 for r in route_results if r.get("agent_id") is not None)
+        await self.events.workflow_event(
+            company_id=company_id,
+            workflow_name="Onboarding Processing",
+            event="tasks_routed",
+            description=f"Routed {routed_count}/{len(tasks)} tasks to agents via orchestrator",
+        )
+
+        await self.events.workflow_event(
+            company_id=company_id,
+            workflow_name="Onboarding Processing",
+            event="tasks_generated",
+            description=f"Generated {len(tasks)} tasks and {len(workflows)} workflows",
+        )
 
         company.onboarding_completed = True
         session.status = "completed"
@@ -122,6 +198,15 @@ class OnboardingService:
             "capabilities": knowledge_graph.capabilities,
         }
         await self.db.flush()
+
+        await self.events.task_transition(
+            company_id=company_id,
+            task_title="Onboarding completed",
+            old_status="in_progress",
+            new_status="completed",
+            source="system",
+            description=f"Onboarding complete for {company.name}",
+        )
 
         return {
             "company": company,

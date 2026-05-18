@@ -118,6 +118,7 @@ class Task(Base):
     status: Mapped[str] = mapped_column(String(50), default="todo")
     priority: Mapped[str] = mapped_column(String(50), default="medium")
     assignee_role: Mapped[str | None] = mapped_column(String(100))
+    assignee_agent_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("agents.id"), nullable=True)
     parent_task_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("tasks.id"))
     dependencies: Mapped[dict | None] = mapped_column(JSON)
     metadata: Mapped[dict | None] = mapped_column(JSON)
@@ -137,3 +138,23 @@ class Workflow(Base):
     assigned_agents: Mapped[dict | None] = mapped_column(JSON)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
+class ActivityEvent(Base):
+    __tablename__ = "activity_events"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    company_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("companies.id"), index=True)
+    type: Mapped[str] = mapped_column(String(50), index=True)
+    source: Mapped[str] = mapped_column(String(100))
+    source_id: Mapped[str | None] = mapped_column(String(255))
+    title: Mapped[str] = mapped_column(String(500))
+    description: Mapped[str | None] = mapped_column(Text)
+    metadata: Mapped[dict | None] = mapped_column(JSON)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
+
+    __table_args__ = (
+        {"indexes": [
+            # Composite index for the common query pattern: events for a company ordered by time
+        ]},
+    )

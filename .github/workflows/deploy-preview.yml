@@ -50,7 +50,7 @@ jobs:
           VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
           VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
         run: |
-          cd apps/web
+          cd frontend
           vercel deploy --token=$VERCEL_TOKEN --prod --yes || echo "Deploy requires VERCEL_TOKEN secret"
         continue-on-error: true
 

@@ -135,6 +135,28 @@ class WorkflowResponse(BaseModel):
     model_config = {"from_attributes": True}
 
 
+class ActivityEventResponse(BaseModel):
+    id: UUID
+    company_id: UUID
+    type: str
+    source: str
+    source_id: str | None
+    title: str
+    description: str | None
+    metadata: dict | None
+    created_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+class ActivityEventFilter(BaseModel):
+    types: list[str] | None = None
+    source: str | None = None
+    since: datetime | None = None
+    before: datetime | None = None
+    limit: int = 50
+
+
 class OnboardingCompleteResponse(BaseModel):
     company: CompanyResponse
     knowledge_graph: KnowledgeGraphResponse | None

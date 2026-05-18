@@ -1,0 +1,155 @@
+name: QA Validation
+
+on:
+  workflow_run:
+    workflows: [CI Pipeline]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      deploy_target:
+        description: 'Deployment target'
+        required: true
+        type: choice
+        options:
+          - staging
+          - production
+      skip_qa:
+        description: 'Skip QA validation'
+        type: boolean
+        default: false
+
+jobs:
+  qa-smoke:
+    name: QA Smoke Tests
+    if: ${{ github.event_name != 'workflow_dispatch' || !inputs.skip_qa }}
+    runs-on: ubuntu-latest
+    environment: ${{ github.event.inputs.deploy_target || 'staging' }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install deps
+        run: pip install httpx pytest
+
+      - name: Health check smoke test
+        if: github.event.inputs.deploy_target == 'production' || github.event_name == 'workflow_run'
+        env:
+          STAGING_URL: ${{ vars.STAGING_URL }}
+          PRODUCTION_URL: ${{ vars.PRODUCTION_URL }}
+        run: |
+          TARGET_URL="${PRODUCTION_URL:-$STAGING_URL}"
+          echo "Running smoke tests against $TARGET_URL"
+          pytest tests/smoke/ -v --target-url="$TARGET_URL" --junitxml=smoke-results.xml
+
+      - name: Upload smoke results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: smoke-test-results
+          path: smoke-results.xml
+
+  qa-regression:
+    name: QA Regression Suite
+    needs: qa-smoke
+    runs-on: ubuntu-latest
+    environment: ${{ github.event.inputs.deploy_target || 'staging' }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install Playwright
+        run: |
+          npm ci
+          npx playwright install --with-deps chromium
+
+      - name: E2E regression tests
+        env:
+          STAGING_URL: ${{ vars.STAGING_URL }}
+          PRODUCTION_URL: ${{ vars.PRODUCTION_URL }}
+        run: |
+          TARGET_URL="${PRODUCTION_URL:-$STAGING_URL}"
+          npx playwright test --reporter=html --reporter=junit
+
+      - name: Upload Playwright report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: playwright-report/
+
+  qa-gate:
+    name: QA Gate
+    needs: qa-regression
+    runs-on: ubuntu-latest
+    environment: ${{ github.event.inputs.deploy_target || 'staging' }}
+    outputs:
+      qa_approved: ${{ steps.check.outputs.approved }}
+    steps:
+      - name: Evaluate QA results
+        id: check
+        run: |
+          PASS_RATE=$(grep -oP 'tests="\K\d+' smoke-results.xml | head -1 || echo "0")
+          FAILURES=$(grep -oP 'failures="\K\d+' smoke-results.xml | head -1 || echo "0")
+          if [ "$FAILURES" -eq 0 ]; then
+            echo "approved=true" >> $GITHUB_OUTPUT
+            echo "QA gate PASSED - 0 failures"
+          else
+            echo "approved=false" >> $GITHUB_OUTPUT
+            echo "QA gate FAILED - $FAILURES failures"
+          fi
+
+      - name: Create QA report
+        run: |
+          cat << 'EOF' > qa-report.md
+          # QA Validation Report
+
+          - **Run:** ${{ github.run_id }}
+          - **Target:** ${{ github.event.inputs.deploy_target || 'staging' }}
+          - **QA Gate:** ${{ steps.check.outputs.approved }}
+
+          ## Sign-off
+
+          | Check | Status |
+          |-------|--------|
+          | Smoke tests | ${{ needs.qa-smoke.result }} |
+          | Regression tests | ${{ needs.qa-regression.result }} |
+          | QA Gate | ${{ steps.check.outputs.approved }} |
+
+          EOF
+
+      - name: Upload QA report
+        uses: actions/upload-artifact@v4
+        with:
+          name: qa-report
+          path: qa-report.md
+
+  request-approval:
+    name: Request Deployment Approval
+    needs: qa-gate
+    if: needs.qa-gate.outputs.qa_approved == 'true'
+    runs-on: ubuntu-latest
+    environment: production-approval
+    steps:
+      - name: Await manual approval
+        uses: trstringer/manual-approval@v1
+        with:
+          secret: ${{ github.token }}
+          approvers: ${{ vars.APPROVERS }}
+          minimum-approvals: 1
+          issue-title: "Deploy ${{ github.event.inputs.deploy_target || 'staging' }} — build ${{ github.run_id }}"
+          issue-body: |
+            QA validation passed. Ready to deploy.
+
+            - **CI:** ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+            - **QA Report:** Download from artifacts above.
+
+            Approve to trigger deployment.
