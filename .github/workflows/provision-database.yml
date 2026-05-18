@@ -1,0 +1,79 @@
+name: Provision PostgreSQL Database
+
+on:
+  workflow_dispatch:
+    inputs:
+      provider:
+        description: 'PostgreSQL provider'
+        required: true
+        type: choice
+        options: [neon, vercel-postgres]
+        default: neon
+
+jobs:
+  provision-neon:
+    if: github.event.inputs.provider == 'neon'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Provision Neon PostgreSQL
+        env:
+          NEON_API_KEY: ${{ secrets.NEON_API_KEY }}
+        run: |
+          # Create Neon project
+          PROJECT_RESP=$(curl -sS -X POST https://console.neon.tech/api/v2/projects \
+            -H "Authorization: Bearer $NEON_API_KEY" \
+            -H "Content-Type: application/json" \
+            -d '{"project":{"name":"tacktcix-preview"},"branch":{}}')
+
+          PROJECT_ID=$(echo "$PROJECT_RESP" | jq -r '.project.id')
+
+          # Get connection string
+          CONN_RESP=$(curl -sS "https://console.neon.tech/api/v2/projects/$PROJECT_ID/connection_uri" \
+            -H "Authorization: Bearer $NEON_API_KEY" \
+            -d '{"role":"neondb_owner","database":"neondb"}' \
+            -H "Content-Type: application/json")
+
+          DATABASE_URL=$(echo "$CONN_RESP" | jq -r '.uri')
+          DATABASE_URL_ASYNC=$(echo "$DATABASE_URL" | sed 's|postgresql://|postgresql+asyncpg://|')
+
+          echo "DATABASE_URL=$DATABASE_URL_ASYNC" >> $GITHUB_ENV
+          echo "PROJECT_ID=$PROJECT_ID" >> $GITHUB_ENV
+
+      - name: Run migrations
+        working-directory: backend
+        run: |
+          pip install -r requirements.txt
+          TACKTCIX_DATABASE_URL=${{ env.DATABASE_URL }} alembic upgrade head
+
+      - name: Set Vercel environment variable
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+        run: |
+          npx vercel env add TACKTCIX_DATABASE_URL production \
+            --token=$VERCEL_TOKEN \
+            --scope=digisumiit-2303s-projects <<< "${{ env.DATABASE_URL }}"
+
+  provision-vercel:
+    if: github.event.inputs.provider == 'vercel-postgres'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Vercel CLI
+        run: npm install -g vercel
+
+      - name: Create Vercel Postgres
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+        run: |
+          vercel integration add postgres --token=$VERCEL_TOKEN
+          vercel postgres create tacktcix-db --token=$VERCEL_TOKEN
+
+      - name: Get connection string and run migrations
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+        run: |
+          DB_URL=$(vercel env pull --token=$VERCEL_TOKEN | grep POSTGRES_URL | cut -d= -f2-)
+          echo "Connection string: $DB_URL"
