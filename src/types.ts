@@ -32,7 +32,19 @@ export interface Task {
   scheduledAt: Date | null;
   startedAt: Date | null;
   completedAt: Date | null;
+  slaDeadline: Date | null;
 }
+
+// ── Dynamic Reprioritization Constants ──────────────────
+
+/** Maximum SLA urgency boost: worth ~0.5 priority levels */
+export const SLA_BOOST_MAX = 50_000_000_000_000;
+/** Penalty applied to blocked tasks: worth ~0.3 priority levels */
+export const BLOCKED_PENALTY = 30_000_000_000_000;
+/** Maximum manual override: worth up to ±5 priority levels */
+export const OVERRIDE_BOUND = 500_000_000_000_000;
+/** SLA urgency window: tasks within this window get a proportional boost (1 hour) */
+export const SLA_WINDOW_MS = 3_600_000;
 
 export const PRIORITY_WEIGHTS: Record<TaskPriority, number> = {
   critical: 100,
@@ -155,6 +167,7 @@ export interface TaskRow {
   scheduled_at: Date | null;
   started_at: Date | null;
   completed_at: Date | null;
+  sla_deadline: Date | null;
 }
 
 export function rowToTask(row: TaskRow): Task {
@@ -174,6 +187,7 @@ export function rowToTask(row: TaskRow): Task {
     scheduledAt: row.scheduled_at,
     startedAt: row.started_at,
     completedAt: row.completed_at,
+    slaDeadline: row.sla_deadline,
   };
 }
 

@@ -81,7 +81,7 @@ services:
 
   frontend:
     build:
-      context: ./frontend
+      context: ./apps/web
       dockerfile: Dockerfile
     ports:
       - "3000:3000"
@@ -90,7 +90,7 @@ services:
     depends_on:
       - backend
     volumes:
-      - ./frontend:/app
+      - ./apps/web:/app
       - /app/node_modules
     command: npm run dev
 

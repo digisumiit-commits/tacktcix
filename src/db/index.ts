@@ -35,10 +35,11 @@ export async function createTask(data: {
   parentId?: string;
   maxRetries?: number;
   scheduledAt?: Date;
+  slaDeadline?: Date;
 }): Promise<Task> {
   const { rows } = await pool.query(
-    `INSERT INTO tasks (title, description, priority, assignee_id, parent_id, max_retries, scheduled_at, status)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, 'queued')
+    `INSERT INTO tasks (title, description, priority, assignee_id, parent_id, max_retries, scheduled_at, sla_deadline, status)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'queued')
      RETURNING *`,
     [
       data.title,
@@ -48,6 +49,7 @@ export async function createTask(data: {
       data.parentId ?? null,
       data.maxRetries ?? 3,
       data.scheduledAt ?? null,
+      data.slaDeadline ?? null,
     ]
   );
   return rowToTask(rows[0]);
@@ -128,6 +130,26 @@ export async function listTasks(filters: {
   const { rows } = await pool.query(
     `SELECT * FROM tasks ${where} ORDER BY priority DESC, created_at ASC LIMIT $${idx++} OFFSET $${idx++}`,
     [...values, limit, offset]
+  );
+  return rows.map(rowToTask);
+}
+
+// ── SLA Deadline Queries ────────────────────────────
+
+/**
+ * Find queued or blocked tasks whose SLA deadlines fall within the given
+ * window from now. Used by batch SLA reprioritization.
+ */
+export async function getTasksApproachingSla(
+  windowMs: number
+): Promise<Task[]> {
+  const { rows } = await pool.query(
+    `SELECT * FROM tasks
+     WHERE sla_deadline IS NOT NULL
+       AND sla_deadline <= NOW() + ($1 || ' milliseconds')::INTERVAL
+       AND status IN ('queued', 'blocked')
+     ORDER BY sla_deadline ASC`,
+    [windowMs]
   );
   return rows.map(rowToTask);
 }

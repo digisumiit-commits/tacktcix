@@ -1,6 +1,6 @@
-import { createTask, getTask, updateTaskStatus, areDependenciesMet, writeLog, getUnresolvedDependencies } from '../db';
+import { createTask, getTask, updateTaskStatus, areDependenciesMet, writeLog, getUnresolvedDependencies, getDependents } from '../db';
 import { validateTransition, describeTransition, resolveNextState } from './state-machine';
-import { enqueueTask, removeFromQueue } from './priority-queue';
+import { enqueueTask, removeFromQueue, reprioritizeTask } from './priority-queue';
 import { scheduleRetry, markFailed } from './retry';
 import { Task, TaskStatus, TaskPriority } from '../types';
 
@@ -13,6 +13,7 @@ export class TaskOrchestrator {
     parentId?: string;
     maxRetries?: number;
     scheduledAt?: Date;
+    slaDeadline?: Date;
   }): Promise<Task> {
     const task = await createTask(data);
 
@@ -74,6 +75,34 @@ export class TaskOrchestrator {
     // Handle queue membership
     if (result.status === 'deployed' || result.status === 'failed') {
       await removeFromQueue(taskId);
+    }
+
+    // Reprioritize dependents when a blocking task completes
+    if (result.status === 'deployed') {
+      const dependents = await getDependents(taskId);
+      for (const dep of dependents) {
+        const depTask = await getTask(dep.taskId);
+        if (depTask && depTask.status === 'blocked') {
+          await reprioritizeTask(depTask);
+          await writeLog({
+            taskId: dep.taskId,
+            level: 'info',
+            message: `Dependency ${taskId} completed — reprioritized.`,
+            metadata: { dependencyId: taskId, dependencyStatus: result.status },
+          });
+        }
+      }
+    }
+
+    // Reprioritize when a task is unblocked (blocked → any non-terminal)
+    if (task.status === 'blocked' && result.status !== 'deployed' && result.status !== 'failed') {
+      await reprioritizeTask(updated);
+      await writeLog({
+        taskId,
+        level: 'info',
+        message: `Task unblocked — reprioritized.`,
+        metadata: { from: task.status, to: result.status },
+      });
     }
 
     // Auto-retry on failure if within retry budget
