@@ -1,0 +1,39 @@
+name: Run Database Migrations
+
+on:
+  workflow_dispatch:
+
+jobs:
+  migrate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Get DATABASE_URL from Vercel
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+        run: |
+          DATABASE_URL=$(curl -sS -H "Authorization: Bearer $VERCEL_TOKEN" \
+            "https://api.vercel.com/v9/projects/prj_07LI89qhm4jODWhxicG7AIPNinL8/env?decrypt=true&teamId=team_RDN02XoVwV6agAkrr4Lt2zhy" \
+            | jq -r '.envs[] | select(.key=="TACKTCIX_DATABASE_URL") | .value')
+          if [ -z "$DATABASE_URL" ] || [ "$DATABASE_URL" = "null" ]; then
+            echo "Could not fetch DATABASE_URL from Vercel"
+            exit 1
+          fi
+          echo "DATABASE_URL=$DATABASE_URL" >> $GITHUB_ENV
+
+      - name: Run Alembic migrations
+        working-directory: backend
+        run: |
+          pip install -r requirements.txt
+          TACKTCIX_DATABASE_URL=${{ env.DATABASE_URL }} alembic upgrade head
+
+      - name: Verify migrations
+        working-directory: backend
+        run: |
+          TACKTCIX_DATABASE_URL=${{ env.DATABASE_URL }} alembic current
