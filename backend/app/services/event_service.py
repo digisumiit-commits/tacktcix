@@ -135,6 +135,7 @@ class EventService:
         *,
         source: str = "system",
         source_id: str | None = None,
+        description: str | None = None,
         metadata: dict[str, Any] | None = None,
     ) -> ActivityEvent:
         return await self.record_event(
@@ -143,7 +144,7 @@ class EventService:
             source=source,
             source_id=source_id,
             title=f"Task \"{task_title}\" → {new_status}",
-            description=f"Status changed from {old_status} to {new_status}",
+            description=description or f"Status changed from {old_status} to {new_status}",
             metadata={"old_status": old_status, "new_status": new_status, **(metadata or {})},
         )
 
