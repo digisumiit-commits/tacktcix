@@ -30,15 +30,19 @@ async def start_onboarding(
     payload: CompanyCreate,
     service: OnboardingService = Depends(get_onboarding_service),
 ):
-    company = await service.create_company(
-        name=payload.name,
-        slug=payload.slug,
-        description=payload.description,
-        industry=payload.industry,
-        size=payload.size,
-    )
-    session = await service.get_session(company.id)
-    return _session_response(session)
+    try:
+        company = await service.create_company(
+            name=payload.name,
+            slug=payload.slug,
+            description=payload.description,
+            industry=payload.industry,
+            size=payload.size,
+        )
+        session = await service.get_session(company.id)
+        return _session_response(session)
+    except Exception as e:
+        import traceback
+        raise HTTPException(status_code=500, detail=f"{type(e).__name__}: {e}\n{traceback.format_exc()}")
 
 
 @router.post("/{company_id}/step", response_model=OnboardingSessionResponse)
